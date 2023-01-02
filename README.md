@@ -10,7 +10,7 @@ PLEASE READ BEFORE USE!!
 This is a destructive process meaning the changes it makes can not be undone. I would HIGHLY reccomend making duplicates
 of your target directory before using this to avoid unwanted changes or lost data. The code has been tested on my system
 and works well for me but I can not accept responsibility for any lost or damaged data. Once you try the functions out
-and are comfortable with the configuration you have, then you may feel free to commit your changes.
+and are comfortable with the configuration you have, then you may feel free to commit your changes to the files.
 
 Description: This is my first public python project. The goal of this script is to prepare a directory tree of samples
 for use in the dirtywave m8. This script does a few things. Each function is designed to work independantly so feel free
