@@ -36,6 +36,3 @@ Feel free to modify this code to fit your needs or make contributions if you fee
 Installation
 Download Python
 Download the latest version of Python from https://www.python.org/downloads/.
-
-Install PyCharm (optional)
-We recommend downloading PyCharm from www.jetbrains.com/pycharm/download/.
