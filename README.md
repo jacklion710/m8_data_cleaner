@@ -36,3 +36,15 @@ Feel free to modify this code to fit your needs or make contributions if you fee
 Installation
 Download Python
 Download the latest version of Python from https://www.python.org/downloads/.
+
+Sure, here are the steps that your users can follow to install the required packages from the requirements.txt file:
+
+Make sure that Python and pip are installed on their system.
+1) Download or clone the project from the repository.
+2) Navigate to the root directory of the project in a terminal window.
+3) Activate the virtual environment, if you are using one.
+4) Run the following command to install the required packages:
+
+pip install -r requirements.txt
+
+This will install all the packages listed in the requirements.txt file into their Python environment.
