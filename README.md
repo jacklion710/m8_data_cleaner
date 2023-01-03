@@ -37,9 +37,12 @@ Installation
 Download Python
 Download the latest version of Python from https://www.python.org/downloads/.
 
-Sure, here are the steps that your users can follow to install the required packages from the requirements.txt file:
+Download pycharm (optional) https://www.jetbrains.com/pycharm/download/#section=windows.
+Feel free to use anything else you prefer.
 
-Make sure that Python and pip are installed on their system.
+Here are the steps that your users can follow to install the required packages from the requirements.txt file:
+
+Make sure that Python and pip are installed on your system.
 1) Download or clone the project from the repository.
 2) Navigate to the root directory of the project in a terminal window.
 3) Activate the virtual environment, if you are using one.
