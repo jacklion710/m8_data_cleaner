@@ -29,8 +29,8 @@ Functionality:
 8) truncate_names() Takes an integer as a second argument as input to limit the max length of each name
 9) convert_bit_depth() Converts every remaining audio file into the target bit depth determined by an integer as the
 input for the second argument
-check_bit_depth() Determines whether the bit_depth is legal for use in the M8
-split_and_trim_all() Removes silences from the beginning and end of a file. Second input argument determines the
+10) check_bit_depth() Determines whether the bit_depth is legal for use in the M8
+11) split_and_trim_all() Removes silences from the beginning and end of a file. Second input argument determines the
 threshold in milliseconds to detect in order for slicing to occur
 
 Further instructions are listed in the main program
