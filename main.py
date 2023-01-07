@@ -24,7 +24,7 @@ Functionality:
 3) delete_non_wav_files() Deletes any junk files such as .txt files and more
 4) remove_plural_suffixes() Strips plural suffixes such as s, ies, and es
 5) remove_characters_from_filenames() Removes illegal or potentially problematic or redundant characcters
-6) shorten_names() Uses a language model to replace full words with shorter synsets
+6) abbreviate_filenames() Uses a language model to replace full words with shorter synsets
 7) remove_vowels() Strips the names of any vowels
 8) truncate_names() Takes an integer as a second argument as input to limit the max length of each name
 9) convert_bit_depth() Converts every remaining audio file into the target bit depth determined by an integer as the
@@ -40,19 +40,34 @@ If you feel like your special case warrants attention, feel free to reach out at
 '''
 
 import os
-import re
 import wave
 import struct
 import stat
-from nltk.corpus import wordnet
-from nltk.tokenize import word_tokenize
+import nltk
+import multiprocessing
+import multiprocessing.pool
 import soundfile as sf
 import pydub
 from pydub import AudioSegment
 from pathlib import Path
+import re
 
-# Converts audio files into WAV type
-def convert_to_wav(root_dir):
+def run_function_in_process(func, *args):
+    with multiprocessing.pool.ThreadPool(processes=1) as pool:
+        result = pool.apply(func, args)
+    return result
+
+# Enables write permissions for every file in the directory
+def enable_write_permissions(root_dir):
+    # Recursively traverse the directory tree
+    for root, dirs, files in os.walk(root_dir):
+        # Enable write permissions for all files
+        for file in files:
+            file_path = os.path.join(root, file)
+            os.chmod(file_path, stat.S_IWRITE)
+
+# Discard non audio file types and convert remaining files into .WAV
+def convert_to_wav(root_dir, verbose_permission=True):
     for root, dirs, files in os.walk(root_dir):
         for file in files:
             file_path = os.path.join(root, file)
@@ -62,13 +77,18 @@ def convert_to_wav(root_dir):
             except Exception as e:
                 if isinstance(e, sf.SoundFileError):
                     # File is not a valid audio file
-                    print(f"{file_path} is not a valid audio file. Do you want to delete it? (y/n)")
-                    user_input = input()
-                    if user_input.lower() == "y":
+                    if file_extension in [".asd", ".alc", ".DS_Store"]:
+                        # Automatically delete these file types
                         os.remove(file_path)
-                else:
-                    # Other error occurred while trying to read file
-                    print(f"An error occurred while trying to read {file_path}: {e}")
+                    elif verbose_permission:
+                        # Prompt user for permission to delete other file types
+                        print(f"{file_path} is not a valid audio file. Do you want to delete it? (y/n)")
+                        user_input = input()
+                        if user_input.lower() == "y":
+                            os.remove(file_path)
+                    else:
+                        # Automatically delete other file types without prompting
+                        os.remove(file_path)
             else:
                 if file_extension not in [".wav"]:
                     # Convert file to WAV
@@ -105,12 +125,15 @@ def check_files(root_dir):
 # Strips plural suffixes
 def remove_plural_suffixes(root_dir):
     def remove_plural_suffixes(s):
+        print(f"Removing plural suffixes from {root_dir}")
         pattern = r'(?i)(?<=[^s])s|(?<=[^es])es|(?<=[^ies])ies'
+        #pattern = r'(?i)(?:[^s]|^)s(?=$|[^a-z])|(?i)(?:[^es]|^)es(?=$|[^a-z])|(?i)(?:[^ies]|^)ies(?=$|[^a-z])|(?i)(?:[^\'en]|^)[\'en](?=$|[^a-z])'
         return re.sub(pattern, '', s)
 
     for root, dirs, files in os.walk(root_dir):
         # Remove plural suffixes from the directory names
         for i, dir in enumerate(dirs):
+            print(f"Removing plurals from directory {dir}")
             old_name = os.path.join(root, dir)
             new_name = remove_plural_suffixes(dir)
             new_name = os.path.join(root, new_name)
@@ -121,6 +144,7 @@ def remove_plural_suffixes(root_dir):
                 pass
         # Remove plural suffixes from the file names
         for file in files:
+            print(f"Removing plurals from file {file}")
             old_file_path = os.path.join(root, file)
             name, ext = os.path.splitext(file)
             new_name = remove_plural_suffixes(name)
@@ -132,101 +156,128 @@ def remove_plural_suffixes(root_dir):
                     # Handle the error here
                     pass
 
-# Enables write permissions for every file in the directory
-def enable_write_permissions(root_dir):
-    # Recursively traverse the directory tree
-    for root, dirs, files in os.walk(root_dir):
-        # Enable write permissions for all files
-        for file in files:
-            file_path = os.path.join(root, file)
-            os.chmod(file_path, stat.S_IWRITE)
-
 # Remove redundant and illegal characters from files and folders
 def remove_characters_from_filenames(root_dir):
-    changed_dirs = True
-    changed_files = True
-    while changed_dirs or changed_files:
-        changed_dirs = False
-        changed_files = False
-        for root, dirs, files in os.walk(root_dir):
-            # Remove illegal characters from the directory names
-            for i, dir in enumerate(dirs):
-                new_name = re.sub(r'[^a-zA-Z0-9]', '', dir)
-                old_name = os.path.join(root, dirs[i])
-                new_name = os.path.join(root, new_name)
-                if old_name != new_name:
-                    os.rename(old_name, new_name)
-                    changed_dirs = True
-            # Remove illegal characters from the file names
-            for file in files:
-                f = Path(file)
-                name, ext = f.stem, f.suffix
-                new_name = re.sub(r'[^a-zA-Z0-9]', '', name)
-                new_file_path = os.path.join(root, new_name + ext)
-                if os.path.join(root, file) != new_file_path:
-                    os.rename(os.path.join(root, file), new_file_path)
-                    changed_files = True
+    def remove_characters_from_string(s):
+        return re.sub(r'[^a-zA-Z0-9]', '', s)
 
-# Use a language model to shorten names with synsets
-def shorten_names(root_dir):
-    def get_synonyms(word):
-        synonyms = []
-        for syn in wordnet.synsets(word):
-            for lemma in syn.lemmas():
-                synonyms.append(lemma.name())
-        return set(synonyms)
-
-    def remove_plural_suffixes(s):
-        pattern = r'(?i)(?<=[^s])s|(?<=[^es])es|(?<=[^ies])ies'
-        return re.sub(pattern, '', s)
-
-    for root, dirs, files in os.walk(root_dir):
-        # Shorten the names of the files
-        for file in files:
-            file_path = os.path.join(root, file)
-            file_name, file_extension = os.path.splitext(file)
-            words = word_tokenize(file_name)
-            new_file_name = ''
-            for word in words:
-                synonyms = get_synonyms(word)
-                if len(synonyms) > 0:
-                    new_file_name += min(synonyms, key=len)
-                else:
-                    new_file_name += word
-            new_file_name = remove_plural_suffixes(new_file_name)
-            new_file_path = os.path.join(root, new_file_name + file_extension)
-            os.rename(file_path, new_file_path)
-
-# Strip vowel characters from names
-def remove_vowels(root_dir):
-    def remove_vowels(s):
-        pattern = r'[aeiouAEIOU]'
-        return re.sub(pattern, '', s)
-
-    for root, dirs, files in os.walk(root_dir, followlinks=True):
-        # Remove vowels from the directory names
-        for i, dir in enumerate(dirs):
+    def process_directories(root, dirs):
+        subdirs = []
+        for dir in dirs:
             old_name = os.path.join(root, dir)
-            new_name = remove_vowels(dir)
-            new_name = os.path.join(root, new_name)
-            if old_name != new_name:
-                try:
-                    os.rename(old_name, new_name)
-                except PermissionError:
-                    # Handle the PermissionError here
-                    print(f'PermissionError: Unable to rename {old_name}')
-        # Remove vowels from the file names
+            new_name = remove_characters_from_string(dir)
+            if old_name != os.path.join(root, new_name):
+                os.rename(old_name, os.path.join(root, new_name))
+                subdirs.append(new_name)
+        return subdirs
+
+    def process_files(root, files):
         for file in files:
             old_file_path = os.path.join(root, file)
             name, ext = os.path.splitext(file)
-            new_name = remove_vowels(name)
+            new_name = remove_characters_from_string(name)
             new_file_path = os.path.join(root, new_name + ext)
+            counter = 1
+            while os.path.exists(new_file_path):
+                new_name = f"{new_name}_{counter}"
+                new_file_path = os.path.join(root, new_name + ext)
+                counter += 1
             if old_file_path != new_file_path:
+                os.rename(old_file_path, new_file_path)
+
+    subdirs = []
+    for root, dirs, files in os.walk(root_dir):
+        subdirs = process_directories(root, dirs)
+        process_files(root, files)
+        for subdir in subdirs:
+            remove_characters_from_filenames(os.path.join(root, subdir))
+
+# Use a language model to shorten names with synsets
+def abbreviate_filenames(root_dir):
+    def abbreviate_string(s):
+        words = nltk.word_tokenize(s)
+        abbreviated_words = []
+        for word in words:
+            synonyms = nltk.corpus.wordnet.synsets(word)
+            if synonyms:
+                lemmas = [lemma.name() for synset in synonyms for lemma in synset.lemmas()]
+                shortest_lemma = min(lemmas, key=len)
+                abbreviated_words.append(shortest_lemma if len(shortest_lemma) < len(word) else word)
+            else:
+                abbreviated_words.append(word)
+        return "".join(abbreviated_words)
+
+    def process_directories(root, dirs):
+        subdirs = []
+        for dir in dirs:
+            old_name = os.path.join(root, dir)
+            new_name = abbreviate_string(dir)
+            if old_name != os.path.join(root, new_name):
+                os.rename(old_name, os.path.join(root, new_name))
+                subdirs.append(new_name)
+        return subdirs
+
+    def process_files(root, files):
+        for file in files:
+            old_file_path = os.path.join(root, file)
+            name, ext = os.path.splitext(file)
+            new_name = abbreviate_string(name)
+            new_file_path = os.path.join(root, new_name + ext)
+            counter = 1
+            while os.path.exists(new_file_path):
+                new_name = f"{new_name}_{counter}"
+                new_file_path = os.path.join(root, new_name + ext)
+                counter += 1
+            if old_file_path != new_file_path:
+                os.rename(old_file_path, new_file_path)
+
+    subdirs = []
+    for root, dirs, files in os.walk(root_dir):
+        subdirs = process_directories(root, dirs)
+        process_files(root, files)
+        for subdir in subdirs:
+            abbreviate_filenames(os.path.join(root, subdir))
+
+# # Strip vowel characters from names
+def remove_vowels(root_dir):
+    def remove_vowels_from_string(s):
+        pattern = r'[aeiouAEIOU]'
+        return re.sub(pattern, '', s)
+
+    def process_directories(root, dirs):
+        subdirs = []
+        for dir in dirs:
+            old_name = os.path.join(root, dir)
+            new_name = remove_vowels_from_string(dir)
+            if old_name != os.path.join(root, new_name):
                 try:
-                    os.rename(old_file_path, new_file_path)
+                    os.rename(old_name, os.path.join(root, new_name))
                 except PermissionError:
-                    # Handle the PermissionError here
+                    print(f'PermissionError: Unable to rename {old_name}')
+            subdirs.append(new_name)
+        return subdirs
+
+    def process_files(root, files):
+        for file in files:
+            old_file_path = os.path.join(root, file)
+            name, ext = re.split(f"{os.extsep}(?!.*{os.extsep})", file)
+            new_name = remove_vowels_from_string(name)
+            counter = 1
+            while os.path.exists(os.path.join(root, f"{new_name}{ext}")):
+                new_name = f"{new_name}_{counter}"
+                counter += 1
+            if old_file_path != os.path.join(root, f"{new_name}{ext}"):
+                try:
+                    os.rename(old_file_path, os.path.join(root, f"{new_name}{ext}"))
+                except PermissionError:
                     print(f'PermissionError: Unable to rename {old_file_path}')
+
+    subdirs = []
+    for root, dirs, files in os.walk(root_dir, followlinks=True):
+        subdirs = process_directories(root, dirs)
+        process_files(root, files)
+        for subdir in subdirs:
+            remove_vowels(os.path.join(root, subdir))
 
 # Clip filename and directory name lengths
 def truncate_names(root_dir, length):
@@ -288,37 +339,54 @@ def convert_bit_depth(root_dir, target_bit_depth):
                     # Read the RIFF header
                     riff_header = f.read(12)
                     if riff_header[:4] != b'RIFF':
-                        raise ValueError('Not a RIFF file')
+                        print(f'{file_path} is not a RIFF file')
+                        continue
                     if riff_header[8:12] != b'WAVE':
-                        raise ValueError('Not a WAVE file')
+                        print(f'{file_path} is not a WAVE file')
+                        continue
 
                     # Read the format chunk
                     fmt_chunk_header = f.read(8)
                     if fmt_chunk_header[:4] != b'fmt ':
-                        raise ValueError('Not a format chunk')
+                        print(f'{file_path} does not have a format chunk')
+                        continue
                     fmt_chunk_size = struct.unpack('<I', fmt_chunk_header[4:8])[0]
                     fmt_chunk_data = f.read(fmt_chunk_size)
                     wFormatTag, nChannels, nSamplesPerSec, nAvgBytesPerSec, nBlockAlign, wBitsPerSample = struct.unpack('<HHIIHH', fmt_chunk_data[:16])
 
                     # Check if bit depth is greater than the target bit depth
                     if wBitsPerSample > target_bit_depth:
-                        # Open a new file for writing
-                        new_file_path = file_path + '_temp'
-                        with wave.open(new_file_path, 'wb') as f2:
-                            # Use the same parameters as the original file, except with the target bit depth
-                            params = (nChannels, target_bit_depth // 8, nSamplesPerSec, 0, 'NONE', 'not compressed')
-                            f2.setparams(params)
-                            # Read and write the samples
-                            while True:
-                                sample_bytes = f.read(nBlockAlign)
-                                if not sample_bytes:
-                                    break
-                                f2.writeframes(sample_bytes)
-                        # Close the original file
-                        f.close()
-                        # Replace the original file with the new one
-                        os.replace(new_file_path, file_path)
-                        print(f'Converted {file_path} to {target_bit_depth} bits')
+                        # Skip over any additional chunks
+                        while True:
+                            chunk_header = f.read(8)
+                            if not chunk_header:
+                                print(f'{file_path} has no data chunk')
+                                break
+                            chunk_id = chunk_header[:4]
+                            chunk_size = struct.unpack('<I', chunk_header[4:8])[0]
+                            if chunk_id == b'data':
+                                # Open a new file for writing
+                                new_file_path = file_path + '_temp'
+                                with wave.open(new_file_path, 'wb') as f2:
+                                    # Use the same parameters as the original file, except the target bit depth
+                                    params = (
+                                    nChannels, target_bit_depth // 8, nSamplesPerSec, 0, 'NONE', 'not compressed')
+                                    f2.setparams(params)
+                                    # Read and write the samples
+                                    while True:
+                                        sample_bytes = f.read(nBlockAlign)
+                                        if not sample_bytes:
+                                            break
+                                        f2.writeframes(sample_bytes)
+                                    # Close the original file
+                                f.close()
+                                # Replace the original file with the new one
+                                os.replace(new_file_path, file_path)
+                                print(f'Converted {file_path} to {target_bit_depth} bits')
+                                break
+                            else:
+                                # Skip over the chunk
+                                f.seek(chunk_size, 1)
 
 # Double check to make sure bitdepth was downsampled properly
 def check_bit_depth(root_dir):
@@ -383,15 +451,16 @@ even add your own functionality.
 if __name__ == '__main__':
 
     # Set the directory where the audio files are located
-    root_dir = 'C:/Users/Jake/Desktop/Breaks'
+    root_dir = 'C:/Users/Jake/Desktop/Tree'
 
     # Set variables
     max_name_length = 12 # Desired max length of file and folder names
-    min_segment_len = 250 # Legnth of silence at beginning and end of sample required to slice silences in milliseconds
-    target_bit_depth = 16 # Set desired bitdepth, M8 supports bit depths less than 32bits but 16bit is reccomended
+    min_segment_len = 250 # Length of silence at beginning and end of sample required to slice silences in milliseconds
+    target_bit_depth = 16 # Set desired bitdepth, M8 supports bit depths less than 32bits but 16bit is recommended
+    Verbose_Permissions = False # 'True' enables user permissions before deletion of files. False deletes all non audio files
 
     # Operations
-    convert_to_wav(root_dir)
+    convert_to_wav(root_dir, Verbose_Permissions)
 
     check_files(root_dir)
 
@@ -401,9 +470,9 @@ if __name__ == '__main__':
 
     remove_characters_from_filenames(root_dir)
 
-    shorten_names(root_dir)
+    # abbreviate_filenames(root_dir)
 
-    remove_vowels(root_dir)
+    # remove_vowels(root_dir)
 
     truncate_names(root_dir, max_name_length)
 
@@ -411,6 +480,6 @@ if __name__ == '__main__':
 
     check_bit_depth(root_dir)
 
-    split_and_trim_all(root_dir, min_segment_len)
+    # split_and_trim_all(root_dir, min_segment_len) # EXPERIMENTAL Try in a small batch first.
 
     print("Done")
