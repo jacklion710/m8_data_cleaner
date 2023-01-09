@@ -51,3 +51,5 @@ Make sure that Python and pip are installed on your system.
 pip install -r requirements.txt
 
 This will install all the packages listed in the requirements.txt file into their Python environment.
+
+I recommend running this script as an administrator. If using pycharm search for the pycharm application, right click and select 'run as administrator'
